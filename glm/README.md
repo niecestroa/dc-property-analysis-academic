@@ -1,3 +1,3 @@
-# Machine Learning Analysis
+# Generalized Linear Models (GLM)
 
-This folder contains machine learning models used for prediction and pattern discovery, including model training and evaluation.
+This folder contains generalized linear model analyses, including model specification, assumptions, and results.
