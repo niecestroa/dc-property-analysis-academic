@@ -1,0 +1,234 @@
+---
+title: "Stat 618 Project Report"
+author: "Aaron Niecestro"
+date: "December 5, 2019"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+```{r}
+library(tidyverse)
+lapply(c("rjags","arm","coda","superdiag","R2WinBUGS","R2jags","lme4"), library,
+       character.only=TRUE)
+```
+
+## Data
+
+```{r Data tidying}
+DC_Properties <- read.csv("~/Documents/STAT 627 Statistical Machine Learning/Stat 627 Project/Data/DC_Properties.csv")
+DC_Properties <- data.frame(DC_Properties) # list to data.frame fix
+
+## Final Cleaned Dataset
+
+DC_Properties[is.na(DC_Properties)] <- 0 # setting all NA to 0 
+# makes data easier to clean and work with
+
+select <- dplyr::select
+
+DC_Properties_tidy <- DC_Properties %>%
+  select(PRICE, BATHRM, HF_BATHRM, HEAT, AC, ROOMS, BEDRM, AYB, YR_RMDL, EYB, STORIES, QUALIFIED, GRADE, CNDTN, KITCHENS, FIREPLACES, WARD, QUADRANT, LATITUDE, LONGITUDE) %>%
+  mutate(PRICE = as.numeric(PRICE),
+         BATHRM = as.numeric(BATHRM),
+         HF_BATHRM = as.numeric(HF_BATHRM),
+         ROOMS = as.numeric(ROOMS),
+         BEDRM = as.numeric(BEDRM),
+         AYB = as.numeric(AYB),
+         EYB = as.numeric(EYB),
+         STORIES = as.numeric(STORIES),
+         KITCHENS = as.numeric(KITCHENS),
+         FIREPLACES = as.numeric(FIREPLACES),
+         LATITUDE = as.numeric(LATITUDE),
+         LONGITUDE = as.numeric(LONGITUDE),
+         HEAT = as.character(HEAT), # made character columns here to filter and clean data better
+         AC = as.character(AC),
+         QUALIFIED = as.character(QUALIFIED),
+         GRADE = as.character(GRADE),
+         CNDTN = as.character(CNDTN)) %>%
+  filter(CNDTN != "",
+         CNDTN != "Default",
+         CNDTN != "Poor",
+         GRADE != " No Data",
+         GRADE != "",
+         HEAT != "No Data", # lose ~50,000 observations of the data by here
+         PRICE > 10000 & PRICE < 10000000,
+         FIREPLACES < 10,
+         KITCHENS <= 10,
+         ROOMS <= 40,
+         BEDRM <= 20,
+         STORIES <= 10,
+         LATITUDE != 0,
+         LONGITUDE != 0) %>% # Up to here, I lose roughly 100K observations
+  mutate(AYB.age = AYB, # making new quantitative
+         AYB.age = 2019 - AYB.age,
+         AYB.age = ifelse(AYB == 2019, 0, AYB.age),
+         EYB.age = as.numeric(EYB),
+         EYB.age = 2019 - EYB.age,
+         EYB.age = ifelse(EYB == 2019, 0, EYB.age),
+         REMODEL.age = as.character(YR_RMDL),
+         REMODEL.age = ifelse(REMODEL.age == "0", 0, REMODEL.age),
+         REMODEL.age = ifelse(REMODEL.age == "20", 0, REMODEL.age),
+         REMODEL.age = as.numeric(REMODEL.age),
+         REMODEL.age = 2019 - REMODEL.age,
+         REMODEL.age = ifelse(REMODEL.age == 2019, 0, REMODEL.age),
+         GRADE = ifelse(GRADE == "Exceptional-A", "Exceptional", GRADE), # fixing Grade
+         GRADE = ifelse(GRADE == "Exceptional-B", "Exceptional", GRADE),
+         GRADE = ifelse(GRADE == "Exceptional-C", "Exceptional", GRADE),
+         GRADE = ifelse(GRADE == "Exceptional-D", "Exceptional", GRADE),
+         QUALIFIED_2 = QUALIFIED, # making new Qualified Variable
+         QUALIFIED_2 = ifelse(QUALIFIED == "Q", 2, 1),
+         QUALIFIED_2 = as.factor(QUALIFIED_2),
+         AC = ifelse(AC == "0", "N", AC),
+         GRADE = as.factor(GRADE), # fixed certain variables back to factors
+         HEAT = as.factor(HEAT), 
+         AC = as.factor(AC),
+         WARD = as.factor(WARD),
+         CONDITION = as.factor(CNDTN),
+         QUALIFIED = as.factor(QUALIFIED),
+         AYB.age = as.numeric(AYB.age),
+         EYB.age = as.numeric(EYB.age),
+         REMODEL.age = as.numeric(REMODEL.age))%>%
+  select(-CNDTN, -AYB, -YR_RMDL, -EYB) # select again 
+
+DC_Final <- na.omit(DC_Properties_tidy)
+
+DC_Final <- DC_Final %>%
+  filter(AYB.age < 2000) %>%
+  mutate(PRICE_10K = PRICE/10000,
+         BATHRM = BATHRM + HF_BATHRM*.5,
+         BATHRM = as.numeric(BATHRM),
+         GRADE2 = as.integer(GRADE)) %>%
+  select(PRICE, PRICE_10K, BATHRM, ROOMS, BEDRM, STORIES, KITCHENS, FIREPLACES, LATITUDE,
+         LONGITUDE, AYB.age, EYB.age, REMODEL.age, HEAT, AC, QUALIFIED, QUALIFIED_2, GRADE,
+         WARD, QUADRANT, CONDITION, GRADE2)
+
+set.seed(10000000)
+
+DC_Final <- sample_n(DC_Final, 57610, replace = TRUE) # want the datasets to be even 
+# I lost one observation by doing this
+dim(DC_Final)
+summary(DC_Final)
+
+## random case number
+
+n <- length(DC_Final$PRICE)
+Z <- sample(n,n/2)
+
+bayes.train <- DC_Final[Z,] %>%
+  as.list()
+bayes.test <- DC_Final[-Z,] %>%
+  as.list()
+```
+
+### Final Model with training set
+
+```{r}
+attach(bayes.train)
+final.model.train <- lmer(PRICE_10K ~ (1|BATHRM) + BATHRM + BEDRM + ROOMS + KITCHENS + FIREPLACES + AYB.age + EYB.age + REMODEL.age + AC + CONDITION + REMODEL.age*CONDITION + ROOMS*AYB.age + ROOMS*AC + CONDITION*BATHRM)
+summary(final.model.train)
+detach(bayes.train)
+```
+
+```{r model train, cache=TRUE}
+## Model with Grade Grouping - best grouping I could find
+
+final.bayes.model  <- function()  { # model name
+    for (i in 1:N.dim) { # 1st for loop
+      mu[i] <- alpha[GRADE[i]] + beta[1]*BATHRM[i] + beta[2]*ROOMS[i] + beta[3]*BEDRM[i] +
+        beta[4]*KITCHENS[i] + beta[5]*FIREPLACES[i] + beta[6]*AYB.age[i] + beta[7]*EYB.age[i] +
+        beta[8]*REMODEL.age[i] + beta[9]*REMODEL.age[i]*CONDITION[i] + beta[10]*CONDITION[i] +
+        beta[11]*REMODEL.age[i]*CONDITION[i] + beta[12]*ROOMS[i]*AYB.age[i] +
+        beta[13]*ROOMS[i]*AC[i] + beta[14]*CONDITION[i]*BATHRM[i]
+      PRICE_10K[i] ~ dnorm(mu[i],tau.y) # response variable distribution
+      e.y[i] <- PRICE_10K[i] - mu[i]
+    }
+    beta[1]   ~ dnorm(0,0.0001); # beta distribution
+    beta[2]   ~ dnorm(0,0.0001);
+    beta[3]   ~ dnorm(0,0.0001);
+    beta[4]   ~ dnorm(0,0.0001);
+    beta[5]   ~ dnorm(0,0.0001);
+    beta[6]   ~ dnorm(0,0.0001);
+    beta[7]   ~ dnorm(0,0.0001);
+    beta[8]   ~ dnorm(0,0.0001);
+    beta[9]   ~ dnorm(0,0.0001);
+    beta[10]   ~ dnorm(0,0.0001);
+    beta[11]   ~ dnorm(0,0.0001);
+    beta[12]   ~ dnorm(0,0.0001);
+    beta[13]   ~ dnorm(0,0.0001);
+    beta[14]   ~ dnorm(0,0.0001);
+    tau.y   ~ dgamma(1,0.1); # tau distributions
+    
+    s.y <- sd(e.y[])
+    
+    for (j in 1:N.GRADE) { # 2nd for loop
+      alpha[j] ~ dnorm(0,tau.alpha) # grouping variable for newpid distribution
+    }
+    tau.alpha ~ dgamma(1,0.1);
+}
+
+train_jags <- bayes.train 
+train_jags["N.dim"] <- length(bayes.train[[1]]) 
+train_jags["N.GRADE"] <- length(unique(bayes.train$GRADE2)) 
+
+# SETUP INITIAL VALUES AND PARAMETER NAMES
+grade.inits <- function(){ 
+  list("tau.y" = 1, "tau.alpha" = 1, "beta" = rep(1,14)) 
+}
+grade.params <- c("beta", "tau.y", "tau.alpha", "s.y")
+
+# RUN THE SAMPLER AND COLLECT CODA SAMPLES
+final.model <- jags(data=train_jags, inits = grade.inits, grade.params, n.iter=10000, model=final.bayes.model, DIC = TRUE)
+print(final.model) # DIC = 284691.6
+
+asap.out.final <- update(final.model, n.iter=20000)
+print(asap.out.final)
+asap.mcmc.final <- as.mcmc(asap.out.final)
+superdiag(as.mcmc.list(asap.mcmc.final), burnin=0)
+```
+
+### Diagnostics
+
+```{r model train diag}
+# Data Diagnostics
+attach(DC_Final)
+par(mfrow=c(2,2))
+qqnorm(BATHRM)
+qqline(BATHRM)
+qqnorm(ROOMS)
+qqline(ROOMS)
+qqnorm(BEDRM)
+qqline(BEDRM)
+qqnorm(STORIES)
+qqline(STORIES)
+qqnorm(KITCHENS)
+qqline(KITCHENS)
+qqnorm(FIREPLACES)
+qqline(FIREPLACES)
+qqnorm(AYB.age)
+qqline(AYB.age)
+qqnorm(EYB.age)
+qqline(EYB.age)
+qqnorm(REMODEL.age)
+qqline(REMODEL.age)
+hist(BATHRM)
+hist(ROOMS)
+hist(BEDRM)
+hist(STORIES)
+hist(KITCHENS)
+hist(FIREPLACES)
+hist(AYB.age)
+hist(EYB.age)
+hist(REMODEL.age)
+par(mfrow=c(1,1))
+detach(DC_Final)
+
+# Basic Model Diagnostics
+plot(final.model)
+traceplot(final.model, mfrow = c(3,3),
+          varname = c("beta", "tau.y", "tau.alpha"),
+          ask = FALSE)
+plot(asap.mcmc.final)
+```
