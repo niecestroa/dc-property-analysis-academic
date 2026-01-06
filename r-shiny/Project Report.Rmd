@@ -1,0 +1,609 @@
+---
+title: "DC Properties Qualification's Binary Logistic Regression Report"
+author: "Aaron Niecestro"
+date: "May 7, 2019"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+
+
+## Data
+
+```{r Packages}
+library(tidyverse)
+library(readxl)
+library(broom)
+library(ggplot2)
+library(modelr)
+library(purrr)
+library(boot)
+library(scales)
+```
+
+```{r Data}
+## Data
+
+DC_Properties <- read_excel("~/Documents/STAT 616 Generalizd Linear Models/GLM Project/Data/DC_Properties.xlsx", na ="")
+summary(DC_Properties)
+dim(DC_Properties)
+```
+
+```{r Cleaning the data}
+## Minimum you have to take away since it was not need in the analysis or Visualisations
+
+## Visualisation Data
+
+DC_Properties_Visualisations <- DC_Properties %>%
+  select(-CMPLX_NUM, -LIVING_GBA, -SALE_NUM, -GIS_LAST_MOD_DTTM) %>%
+  filter(PRICE > 10000 & PRICE < 10000000,
+         HEAT != "No Data",
+         CNDTN != "No Data",
+         CNDTN != "Default",
+         STRUCT != "Default",
+         GRADE != " No Data",
+         STYLE != "Default",
+         KITCHENS <= 10,
+         ROOMS < 26,
+         BEDRM < 20,
+         STORIES <100,
+         BATHRM > 0,
+         HF_BATHRM > 0) %>%
+  mutate(QUALIFIED_2 = QUALIFIED) %>%
+  mutate(QUALIFIED_2 = ifelse(QUALIFIED == "Q", 1, 0))
+
+dcproperty <- na.omit(DC_Properties_Visualisations)
+
+dcproperty$AC[dcproperty$AC == "0"] <- "N"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-A"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-B"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-C"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-D"] <- "Exceptional"
+
+dim(dcproperty)
+
+## Final Cleaned Dataset
+
+DC_Properties_Final <- DC_Properties %>%
+  select(-NUM_UNITS, -YR_RMDL, -SALEDATE, -GBA, -STRUCT, -EXTWALL, -ROOF, -INTWALL, -CMPLX_NUM, -LIVING_GBA, -FULLADDRESS, -CITY, -STATE, -NATIONALGRID, -ASSESSMENT_SUBNBHD, -CENSUS_BLOCK, -SALE_NUM, -GIS_LAST_MOD_DTTM) %>%
+  filter(CNDTN != "No Data",
+         CNDTN != "Default",
+         GRADE != " No Data",
+         STYLE != "Default",
+         PRICE > 10000 & PRICE < 10000000,
+         FIREPLACES < 8,
+         KITCHENS <= 10,
+         ROOMS < 26,
+         BEDRM < 20,
+         STORIES <100,
+         BATHRM > 0,
+         HF_BATHRM > 0) %>%
+  mutate(QUALIFIED_2 = QUALIFIED) %>%
+  mutate(QUALIFIED_2 = ifelse(QUALIFIED == "Q", 1, 0))
+
+DC_Final <- na.omit(DC_Properties_Final)
+
+DC_Final$AC[DC_Final$AC == "0"] <- "N"
+
+dim(DC_Final)
+summary(DC_Final)
+
+## random case number
+
+cases <- c(1:2773, 4624:6649, 8000:12724, 15874:22079, 26216:31903)
+
+Final_T <- DC_Final[cases,]
+Final_V <- DC_Final[-cases,]
+```
+
+Need to talk about the Data, what did to clean it
+
+## Section 1: Analysis
+
+
+
+#### Model Selection
+
+```{r Basic Model}
+## Basic that we originally thought to work with
+
+basic_model <- glm(as.factor(QUALIFIED_2) ~ PRICE, data = Final_T, family = binomial(link=logit))
+summary(basic_model)
+```
+
+Need here - Why we choose this as the basic model
+
+```{r All variable model without interaction}
+## Model with all the variables we wished to use
+
+model3 <- glm(as.factor(QUALIFIED_2) ~ PRICE + BATHRM + HF_BATHRM + as.factor(AC) + ROOMS + BEDRM + STORIES + as.factor(STYLE) + as.factor(CNDTN) + KITCHENS + FIREPLACES + as.factor(WARD), data = Final_T, family = binomial(link=logit))
+summary(model3)
+```
+
+#### AIC & BIC Analysis
+
+```{r AIC without interaction}
+step(model3,direction="both")
+
+model_aic <- glm(as.factor(QUALIFIED_2) ~ PRICE + BATHRM + as.factor(AC) + ROOMS + BEDRM + as.factor(STYLE) + as.factor(CNDTN) + KITCHENS + as.factor(WARD), family = binomial(link = logit), data = Final_T)
+summary(model_aic)
+# AIC: 29329
+```
+
+```{r BIC without interaction}
+sampsize <- length(model3$fitted)
+step(model3, direction="both", k=log(sampsize))
+
+## Model Created from BIC Results is below
+
+model_bic <- glm(as.factor(QUALIFIED_2) ~ PRICE + BATHRM + as.factor(AC) + ROOMS + BEDRM + as.factor(STYLE) + as.factor(CNDTN) + KITCHENS + as.factor(WARD), data = Final_T, family = binomial(link=logit))
+summary(model_bic)
+# AIC: 29329, BIC = 32182
+
+## tested further to see what could be eliminated using AIC and BIC
+## got rid of STYLE - messing with model approaches, too many variables
+```
+
+The results of AIC and BIC analysis
+
+```{r AIC and BIC without as.factor(STYLE)}
+## from AIC & BIC results
+
+model_inter <- glm(QUALIFIED_2 ~ PRICE + as.factor(AC) +ROOMS + BEDRM + as.factor(CNDTN) + as.factor(WARD) + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*BEDRM + PRICE*as.factor(CNDTN) + PRICE*as.factor(WARD) + as.factor(CNDTN)*as.factor(WARD), family = binomial(link = logit), data = Final_T)
+
+## AIC
+step(model_inter, direction = "both")
+
+## BIC
+sampsize <- length(model_inter$fitted)
+step(model_inter, direction="both", k=log(sampsize))
+```
+
+Need Here - why we took out as.factor(STYLE) and the impact behind doing this
+
+#### Likelihood Ratio Test 
+
+```{r Hypothesis Test}
+
+```
+
+Need Here - what testing we ran, why we choose these tests procedures, results
+
+#### Goodness of Fit Testing
+
+```{r GOF Test}
+
+```
+
+Need Here - what testing we ran, why we choose these tests procedures, results
+
+#### Final Model
+
+```{r}
+final_model <- glm(as.factor(QUALIFIED_2) ~ PRICE + I(PRICE^0.5) + as.factor(AC) + ROOMS + I(ROOMS^.2) + I(BEDRM^0.5) + as.factor(CNDTN) + as.factor(WARD) + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*as.factor(WARD), family = binomial(link = logit), data = Final_T)
+summary(final_model)
+```
+
+Need here- interpretation of the model
+
+## Section 2: Visualisation
+
+### Section 2.1: Analysis Visualisations
+
+#### Diagnostic Plots
+
+```{r Diagnostic Plots}
+a <- c(1:10, 34317:34327)
+
+final_modelT.diag <- glm.diag(final_model)
+final_modelT.diag$rd[a]  # Standardized Deviance Residuals
+final_modelT.diag$rp[a]  # Standardized Person Residual
+final_modelT.diag$cook[a]  # Cook's D
+final_modelT.diag$h[a]  # Leverages
+
+glm.diag.plots(final_model)
+
+plot(final_model)
+```
+
+#### ROC Curve
+
+```{r ROC Curve}
+roc.analysis <-function (object, newdata = NULL, newplot=TRUE)
+{
+  if (is.null(newdata)) {
+    pi.tp <- object$fitted[object$y == 1]
+    pi.tn <- object$fitted[object$y == 0]
+  }
+  else {
+    pi.tp <- predict(object, newdata, type = "response")[newdata$y == 1]
+    pi.tn <- predict(object, newdata, type = "response")[newdata$y == 0]
+  }
+
+  pi.all <- sort(c(pi.tp, pi.tn))
+  sens <- rep(1, length(pi.all)+1)
+  specc <- rep(1, length(pi.all)+1)
+  for (i in 1:length(pi.all)) {
+    sens[i+1] <- mean(pi.tp >= pi.all[i], na.rm = T)
+    specc[i+1] <- mean(pi.tn >= pi.all[i], na.rm = T)
+  }
+ 
+  npoints <- length(sens)
+  area <- sum(0.5 * (sens[-1] + sens[-npoints]) * (specc[-npoints] -
+        specc[-1]))
+  lift <- (sens - specc)[-1]
+  cutoff <- pi.all[lift == max(lift)][1]
+  sensopt <- sens[-1][lift == max(lift)][1]
+  specopt <- 1 - specc[-1][lift == max(lift)][1]
+
+  if (newplot){
+  plot(specc, sens, xlim = c(0, 1), ylim = c(0, 1), type = "s",
+            xlab = "1-specificity", ylab = "sensitivity", main="ROC")
+  abline(0, 1)
+  }
+  else lines(specc, sens, type="s", lty=2, col=2)
+
+  list(pihat=as.vector(pi.all), sens=as.vector(sens[-1]),
+  spec=as.vector(1-specc[-1]), area = area, cutoff = cutoff,
+  sensopt = sensopt, specopt = specopt)
+}
+
+b <- c(1:10, 34317:34327)
+trainingROC <- roc.analysis(final_model)
+trainingROC$area
+trainingROC$cutoff
+trainingROC$sensopt
+trainingROC$specopt
+
+Final_V$y <- Final_V$QUALIFIED_2
+validationROC <- roc.analysis(final_model, newdata=Final_V, newplot=F)
+validationROC$area
+validationROC$cutoff
+validationROC$sensopt
+validationROC$specopt
+```
+
+Need here - results from teh ROC Cruve and numbers
+
+#### Variance Inflation Factors (VIF)
+
+```{r}
+library(rms)
+
+vif(glm(as.factor(QUALIFIED_2) ~ PRICE + I(PRICE^0.5) + as.factor(AC) + ROOMS + I(ROOMS^.2) + I(BEDRM^0.5) + as.factor(CNDTN) + as.factor(WARD) + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*as.factor(WARD), family = binomial(link = logit), data = Final_T))
+```
+
+EDIT - nothing really noteworthy to mention here, the interactions and correlated with one another and same with the transformations
+
+### Section 2.2: Model Visualisation
+
+#### Basic Model Graph
+
+```{r}
+(graph <- ggplot(dcproperty, aes(y=PRICE, x=QUALIFIED_2)) +
+    stat_sum() +
+    stat_smooth(method="glm",
+                method.args = list(family="binomial"), se=TRUE,
+                fullrange=TRUE) +
+    labs(title = "Market Qualification based on Price and Location",
+       subtitle = "Ward 2 and Ward 3 are the more expensive places to live",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Qualifcation to be on Market",
+       color = "Qualification") +
+  facet_wrap(~WARD) +
+  theme_bw())
+```
+
+Need to put - here what we got from each graph
+
+#### Map Graphs
+
+```{r Map Graph1}
+ggplot(dcproperty, aes(x=X, y=Y)) +
+  geom_point(aes(color=ZIPCODE)) +
+  labs(title = "Map of Data by Zipcode",
+       subtitle = "Locations are well distributed",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "Zipcode") +
+  theme_bw() +
+  theme(legend.position = "right")
+```
+
+Need to put - here what we got from each graph
+
+```{r Map Graph2}
+ggplot(dcproperty, aes(x=X, y=Y)) +
+  geom_point(aes(color=WARD)) +
+  labs(title = "Map of Data by Ward",
+       subtitle = "Originally there were 8 Wards",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "WARD") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Map Graph3}
+ggplot(dcproperty, aes(x=X, y=Y)) +
+  geom_point(aes(color=QUADRANT)) +
+  labs(title = "Map of Data By Quadrants",
+       subtitle = "Little to no South-West area",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "Quadrant") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+#### Year Graphs
+
+```{r Year Graph1}
+## use these graphs below
+
+dcproperty %>%
+  filter(YR_RMDL > 1800) %>%
+  ggplot(mapping = aes(y=YR_RMDL, x=QUADRANT)) +
+  geom_boxplot() +
+  labs(title = "Price based on Qualifications and Ward",
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Remodeled Years",
+       x = "Quadrant",
+       color = "Qualification") +
+  theme_bw() +
+  theme(legend.position = "Left")
+```
+
+Need to put - here what we got from each graph
+
+```{r Year Graph2}
+dcproperty %>%
+  filter(YR_RMDL > 1800) %>%
+  ggplot(mapping = aes(y=YR_RMDL, x=GRADE)) +
+  geom_boxplot() +
+  labs(title = "Price based on Qualifications and Ward",
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Grade",
+       color = "Qualification") +
+  theme_bw() +
+  theme(legend.position = "Left")
+```
+
+Need to put - here what we got from each graph
+
+```{r Year Graph3}
+dcproperty %>%
+  filter(YR_RMDL > 1800) %>%
+  ggplot(mapping = aes(y=YR_RMDL, x=CNDTN)) +
+  geom_boxplot() +
+  labs(title = "Price based on Qualifications and Ward",
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Condition Review",
+       color = "Qualification") +
+  theme_bw() +
+  theme(legend.position = "Left")
+```
+
+#### Building Heat and AC Graph
+
+```{r Heat and AC Graph}
+ggplot(dcproperty, aes(x=AC, y=PRICE)) +
+  geom_point(aes(color=HEAT)) +
+  facet_wrap(~QUALIFIED_2) +
+  labs(title = "Price, AC and Heat",
+       subtitle = "AC is Important to the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Air Conditions",
+       color = "Heat") +
+  theme_bw() +
+  theme(legend.position = "right")
+```
+
+Need to put - here what we got from each graph
+
+#### Continuous Variable Plots
+
+```{r Number Graph1}
+text_df <- tibble(text = "After 16 rooms \n Price decreases", x = -Inf, y = Inf)
+ggplot(dcproperty, aes(ROOMS, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = TRUE) +
+  labs(title = "Price Increases as Rooms Increases",
+       subtitle = "A Majority of Qualified Places to live are less then 1 Million Dollars",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Rooms",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "left") +
+  scale_colour_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Number Graph2}
+text_df <- tibble(text = "More Kitchens equals\nLower Price & Less Qualified", x = Inf, y = Inf)
+ggplot(dcproperty, aes(KITCHENS, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  labs(title = "Kitchens Impact on Price",
+       subtitle = "Having Fewer Kitchens Increases the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Kitchens",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") +
+  scale_colour_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Number Graph3}
+text_df <- tibble(text = "After Bedrooms equals 9\nPrice decreases", x = Inf, y = Inf)
+ggplot(dcproperty, aes(BEDRM, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = TRUE) +
+  labs(title = "Bedrooms Impact on Price",
+       subtitle = "Having too much is bad thing",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Kitchens",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") +
+  scale_colour_brewer(palette = "Set2") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Number Graph4}
+text_df <- tibble(text = "More Bedrooms equals\nLower Price & Less Qualified", x = -Inf, y = Inf)
+ggplot(dcproperty, aes(BEDRM, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = TRUE) +
+  labs(title = "Bedrooms Steep Increase & Decrease on Price",
+       subtitle = "Having Fewer Kitchens Increases the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Bedrooms",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "left") +
+  scale_colour_brewer(palette = "Paired") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Number Graph5}
+text_df <- tibble(text = "Highest Price is when \n the Number of Stories \n is between 2 to 3", x = Inf, y = Inf)
+ggplot(dcproperty, aes(STORIES, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) +
+  labs(title = "Stories Steep Increase & Dramatic Decrease on Price",
+       subtitle = "Having between 1 and 5 Stories = Higher Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Stories",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") +
+  scale_colour_brewer(palette = "Paired") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r Number Graph6}
+text_df <- tibble(text = "It seems that The number of Fireplaces \n has little effect to change in price", x = Inf, y = Inf)
+ggplot(dcproperty, aes(FIREPLACES, PRICE)) +
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) +
+  labs(title = "Fire Places and Price",
+       subtitle = "Qualification Rate is unchanging in with the increase in Fire Places",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Fireplaces",
+       color = "Qualification") +
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") +
+  scale_colour_brewer(palette = "Reds") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+# Time Graphs
+
+```{r}
+ggplot(dcproperty, aes(SALEDATE, PRICE)) + 
+  geom_point(aes(color = as.factor(QUALIFIED_2))) +
+  geom_smooth(se = TRUE) + 
+  labs(title = "Price increases as Time increases",
+       subtitle = "The closer the sales date gets to the present the higher the price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Year Last Sold",
+       color = "Qualification") + 
+  scale_colour_brewer(palette = "BuPu") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r}
+ggplot(dcproperty, aes(SALEDATE, PRICE)) + 
+  geom_point(aes(color = as.factor(WARD))) +
+  labs(title = "Stacking of Ward Areas over Years by Grade",
+       subtitle = "The lower the ward number you are in the higher the price will be",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Year Last Sold",
+       color = "Ward") + 
+  scale_colour_brewer(palette = "YlOrBr") +
+  facet_wrap(~GRADE) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r}
+ggplot(dcproperty, aes(SALEDATE, PRICE)) + 
+  geom_point(aes(color = as.factor(QUADRANT))) +
+  labs(title = "Overlap of Quadrant Price over Years by Grade",
+       subtitle = "Except Northwest, which sells at the highest price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Year Last Sold",
+       color = "Quadrant") + 
+  facet_wrap(~GRADE) +
+  scale_colour_brewer(palette = "YlGnBu") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Need to put - here what we got from each graph
+
+```{r}
+ggplot(dcproperty, aes(SALEDATE, ROOMS)) + 
+  geom_point(aes(color = as.factor(GRADE))) +
+  labs(title = "Overlap of Quadrant Price over Years by Ward",
+       subtitle = "Except Northwest, which sells at the highest price",
+       caption = "Data from Kaggle.com",
+       y = "Condition",
+       x = "Year Last Sold",
+       color = "Condition Review") + 
+  scale_colour_brewer(palette = "Paired") +
+  facet_wrap(~WARD) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+## Conclusion
+

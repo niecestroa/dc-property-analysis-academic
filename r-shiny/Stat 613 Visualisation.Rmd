@@ -1,0 +1,519 @@
+---
+title: "Data Science Project Graphs"
+author: "Aaron Niecestro"
+date: "4/6/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+read up and use github
+
+```{r packages}
+library(tidyverse)
+library(readxl)
+library(broom)
+library(splines)
+library(ggplot2)
+library(purrr)
+library(lubridate)
+library(boot)
+```
+
+```{r data}
+DC_Properties <- read_excel("~/Documents/STAT 616 Generalizd Linear Models/GLM Project/Data/DC_Properties_new.xls", na="")
+names(DC_Properties)
+summary(DC_Properties)
+dim(DC_Properties)
+```
+
+```{r Cleaning}
+# Got rid of CMPLX_NM, LIVING_GBA, GIS_LAST_MOD_DTTM, SALENUM - if wish to get rid of more tell me in google doc
+
+# Variables had to get rid of either because too many blanks or not needed for modeling
+
+DC_Properties2 <- DC_Properties %>%
+  select(-CMPLX_NUM, -LIVING_GBA, -SALE_NUM, -GIS_LAST_MOD_DTTM) %>%
+  filter(HEAT != "No Data") %>%
+  filter(CNDTN != "No Data") %>%
+  filter(STRUCT != "Default") %>%
+  filter(GRADE != " No Data") %>%
+  filter(KITCHENS <= 10) %>%
+  filter(ROOMS < 26) %>%
+  filter(BEDRM < 20) %>%
+  filter(STORIES <100)
+dcproperty <- na.omit(DC_Properties2)
+dim(dcproperty)
+
+# Do we get rid of more variables to get more observations back
+
+DC_Properties3 <- DC_Properties %>%
+  select(-CMPLX_NUM, -LIVING_GBA, -SALE_NUM, -GIS_LAST_MOD_DTTM, -YR_RMDL, -CITY, -STATE, -ASSESSMENT_SUBNBHD, -CENSUS_BLOCK, -NATIONALGRID, -LIVING_GBA, -FULLADDRESS, -NUM_UNITS)
+dcproperty2 <- na.omit(DC_Properties3)
+dim(dcproperty2)
+
+# Final Cleaned Dataset
+
+DC_Properties_Final <- DC_Properties %>%
+  select(-NUM_UNITS, -YR_RMDL, -SALEDATE, -GBA, -STRUCT, -EXTWALL, -ROOF, -INTWALL, -CMPLX_NUM, -LIVING_GBA, -FULLADDRESS, -CITY, -STATE, -NATIONALGRID, -ASSESSMENT_SUBNBHD, -CENSUS_BLOCK, -SALE_NUM, -GIS_LAST_MOD_DTTM) %>%
+  filter(PRICE > 10000 & PRICE < 10000000) %>%
+  filter(FIREPLACES < 8) %>%
+  filter(CNDTN != "No Data") %>%
+  filter(GRADE != " No Data")  %>%
+  filter(KITCHENS <= 10) %>%
+  filter(ROOMS < 26) %>%
+  filter(BEDRM < 20) %>%
+  filter(STORIES <100)
+
+DC_Final <- na.omit(DC_Properties_Final)
+dim(DC_Final)
+summary(DC_Final)
+
+DC_Final$QUALIFIED_2 <- DC_Final$QUALIFIED
+DC_Final$QUALIFIED_2[DC_Final$QUALIFIED_2 == "Q"] <- 1
+DC_Final$QUALIFIED_2[DC_Final$QUALIFIED_2 == "U"] <- 0
+DC_Final$AC[DC_Final$AC == "0"] <- "N"
+
+dcproperty$QUALIFIED_2 <- dcproperty$QUALIFIED
+dcproperty$QUALIFIED_2[dcproperty$QUALIFIED_2 == "Q"] <- 1
+dcproperty$QUALIFIED_2[dcproperty$QUALIFIED_2 == "U"] <- 0
+dcproperty$AC[dcproperty$AC == "0"] <- "N"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-A"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-B"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-C"] <- "Exceptional"
+dcproperty$GRADE[dcproperty$GRADE == "Exceptional-D"] <- "Exceptional"
+
+# Traing Dataset
+
+# Ward 1 = 1:4623
+# Ward 2 = 4624:7999
+# Ward 3 = 8000:15873
+# Ward 4 = 15874:26215
+# Ward 5 = 26216:35693
+# Ward 6 = 35694:45276
+# Ward 7 = 45277:53041
+# Ward 8 = 53042:57580 
+
+cases <- 1:34550
+
+# random case number
+
+cases2 <-  c(1:2773, 4624:6649, 8000:12724, 15874:22079, 26216:31903, 35694:41444, 45277:49935, 53042:55540)
+
+Final_T <- DC_Final[cases2,]
+Final_V <- DC_Final[-cases2,]
+```
+
+```{r Basic model}
+# Basic needed model Model
+
+basic_model <- glm(as.factor(QUALIFIED_2) ~ PRICE, data = Final_T, family = binomial(link=logit))
+summary(basic_model)
+```
+
+```{r variable names}
+names(DC_Final)
+```
+
+```{r no Ward, no Style transformation from AIC}
+# transformations 
+model_trans_aic <- glm(as.factor(QUALIFIED_2) ~ PRICE + I(PRICE^0.5) + HF_BATHRM + as.factor(AC) + ROOMS + I(ROOMS^.2) + BEDRM + as.factor(CNDTN) + I(FIREPLACES^0.5) + PRICE*HF_BATHRM + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*as.factor(CNDTN) + PRICE*FIREPLACES, family = binomial(link = logit), data = Final_T)
+summary(model_trans_aic)
+# AIC: 28106
+```
+
+```{r no Ward, no Style transformation from BIC}
+# transformations 
+model_trans_bic <- glm(as.factor(QUALIFIED_2) ~ PRICE + as.factor(AC) + ROOMS + I(ROOMS^0.2) + I(BEDRM^0.5) + as.factor(CNDTN) + FIREPLACES + PRICE*ROOMS + PRICE*FIREPLACES, family = binomial(link = logit), data = Final_T)
+summary(model_trans_bic)
+# AIC: 28998
+```
+
+## Wish to see 
+
+## Final Model
+
+```{r Final model}
+final_model <- glm(as.factor(QUALIFIED_2) ~ PRICE + I(PRICE^0.5) + as.factor(AC) + ROOMS + I(ROOMS^.2) + I(BEDRM^0.5) + as.factor(CNDTN) + as.factor(WARD) + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*as.factor(WARD), family = binomial(link = logit), data = Final_T)
+
+summary(final_model)
+```
+
+## Model graphs
+
+```{r}
+basic_model <- glm(as.factor(QUALIFIED_2) ~ PRICE, data = Final_T, family = binomial(link=logit))
+summary(basic_model)
+
+# dcpred <- dcproperty %>% add_predictions(basic_model, "pred")
+
+# dcresid <- dcproperty %> add_residuals(basic_model, "resid")
+```
+
+## Basic Model Graphs
+
+```{r}
+graph2 <- ggplot(dcproperty, aes(y=PRICE, x=QUALIFIED_2)) +
+    geom_point() +
+    stat_smooth(method="glm",
+                method.args = list(family="binomial"), 
+                se=TRUE,
+                fullrange=TRUE) +
+    labs(y="Price", x="Qualified")
+graph2
+
+ggplot(dcproperty, aes(y=PRICE, x=QUALIFIED_2)) +
+    stat_sum() +
+    stat_smooth(method="glm",
+                method.args = list(family="binomial"), se=TRUE,
+                fullrange=TRUE) +
+    labs(y="Price", x="Qualified") + 
+  facet_wrap(~ZIPCODE)
+
+# use this one below
+graph <- ggplot(dcproperty, aes(y=PRICE, x=QUALIFIED_2)) +
+    stat_sum() +
+    stat_smooth(method="glm",
+                method.args = list(family="binomial"), se=TRUE,
+                fullrange=TRUE) +
+    labs(title = "Market Qualification based on Price and Location", 
+       subtitle = "Ward 2 and Ward 3 are the more expensive places to live",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Qualifcation to be on Market",
+       color = "Qualification") + 
+  facet_wrap(~WARD) + 
+  theme_bw()
+graph
+```
+
+https://stackoverflow.com/questions/47080625/plotting-predictions-from-a-logistic-regression
+
+
+## Residual Graphs
+
+```{r}
+#use these below 
+
+# diamonds2 <- diamonds2 %>% add_residuals(mod_diamonds,"lresid")
+
+plot(final_model)
+```
+
+## Location graphs
+
+```{r}
+names(dcproperty)
+
+ggplot(dcproperty, aes(x=ZIPCODE, y=GRADE)) + 
+  geom_point(aes(color = CNDTN)) + 
+  stat_sum() + 
+  facet_wrap(~QUALIFIED_2)
+
+ggplot(dcproperty, aes(x=WARD, y=PRICE)) + 
+  geom_point(aes(color = ASSESSMENT_NBHD)) + 
+  stat_sum() + 
+  facet_wrap(~QUALIFIED_2)
+
+ggplot(dcproperty, aes(x=WARD, y=PRICE)) + 
+  geom_point() + 
+  stat_sum(aes(color = ZIPCODE)) + 
+  facet_wrap(~AC)
+
+ggplot(dcproperty, aes(x=WARD, y=ASSESSMENT_NBHD)) + 
+  geom_point(aes(color = PRICE)) + 
+  stat_sum() + 
+  facet_wrap(~QUALIFIED_2)
+
+ggplot(dcproperty, aes(x=WARD, y=QUADRANT)) + 
+  geom_point() + 
+  stat_sum(aes(color = ZIPCODE)) + 
+  facet_wrap(~QUALIFIED_2) + 
+  coord_flip()
+
+# keep these plots below
+
+ggplot(dcproperty, aes(x=X, y=Y)) + 
+  geom_point(aes(color=ZIPCODE)) + 
+  labs(title = "Map of Data Locations", 
+       subtitle = "Hint: Map of DC",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "Zipcode") + 
+  theme_bw() + 
+  theme(legend.position = "right")
+
+ggplot(dcproperty, aes(x=X, y=Y)) + 
+  geom_point(aes(color=WARD)) + 
+  labs(title = "Map of Data Locations", 
+       subtitle = "Hint: Map of DC by Ward",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "WARD") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+ggplot(dcproperty, aes(x=X, y=Y)) + 
+  geom_point(aes(color=QUADRANT)) + 
+  labs(title = "Map of Data Locations", 
+       subtitle = "Map of DC by Compass",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "Quadrant") + 
+  theme_bw() + 
+  theme(legend.position = "right")
+
+ggplot(dcproperty, aes(x=WARD, y=PRICE)) + 
+  geom_bar(aes(color = GRADE)) +
+  facet_wrap(~QUALIFIED_2) + 
+  labs(title = "Price based on Qualifications and Ward", 
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Ward",
+       color = "Qualification") + 
+  theme_bw() + 
+  theme(legend.position = "Left")
+```
+
+## Year graphs
+
+```{r}
+## use these graphs below 
+
+dcproperty %>%
+  filter(YR_RMDL > 1800) %>%
+  ggplot(mapping = aes(y=YR_RMDL, x=QUADRANT)) + 
+  geom_boxplot() + 
+  labs(title = "Price based on Qualifications and Ward", 
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Ward",
+       color = "Qualification") + 
+  theme_bw() + 
+  theme(legend.position = "Left")
+
+dcproperty %>%
+  filter(YR_RMDL > 1800) %>%
+  ggplot(mapping = aes(y=YR_RMDL, x=CNDTN)) + 
+  geom_boxplot() + 
+  labs(title = "Price based on Qualifications and Ward", 
+       subtitle = "Ward 1 to 3 are the most expensive",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Ward",
+       color = "Qualification") + 
+  theme_bw() + 
+  theme(legend.position = "Left")
+```
+
+## Design Plots
+
+```{r}
+ggplot(dcproperty, aes(x=HEAT, y=STRUCT)) + 
+  geom_point() + 
+  stat_sum(aes(color = STYLE)) + 
+  facet_wrap(~QUALIFIED_2) + 
+  coord_flip() + 
+  labs(title = "Map of Data Locations", 
+       subtitle = "Map of DC by Compass",
+       caption = "Data from Kaggle.com",
+       y = "Longitude",
+       x = "Latitude",
+       color = "Quadrant") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+# Use these graphs below
+ggplot(dcproperty, aes(x=AC, y=PRICE)) + 
+  geom_point(aes(color=HEAT)) + 
+  facet_wrap(~QUALIFIED_2) + 
+  labs(title = "Price, AC and Heat", 
+       subtitle = "AC is Important to the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price",
+       x = "AC",
+       color = "Heat") + 
+  theme_bw() +
+  theme(legend.position = "right")
+```
+
+### Number Graphs
+
+```{r}
+names(dcproperty)
+
+# use these graphs below 
+text_df <- tibble(text = "After 16 rooms \n Price decreases", x = -Inf, y = Inf)
+ggplot(dcproperty, aes(ROOMS, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) + 
+  geom_smooth(se = FALSE) + 
+  labs(title = "Price Increases as Rooms Increases", 
+       subtitle = "A Majority of Qualified Places to live are less then 1 Million Dollars",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Rooms",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "left") +
+  scale_colour_brewer(palette = "Set1") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+text_df <- tibble(text = "More Kitchens equals\nLower Price & Less Qualified", x = Inf, y = Inf)
+ggplot(dcproperty, aes(KITCHENS, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Kitchens Impact on Price", 
+       subtitle = "Having Fewer Kitchens Increases the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Kitchens",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") + 
+  scale_colour_brewer(palette = "Set1") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+text_df <- tibble(text = "After Bedrooms equals 9\nPrice decreases", x = Inf, y = Inf)
+ggplot(dcproperty, aes(BEDRM, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Bedrooms Impact on Price", 
+       subtitle = "Having too much is bad thing",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Kitchens",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") +
+  scale_colour_brewer(palette = "Set2") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+text_df <- tibble(text = "More Bedrooms equals\nLower Price & Less Qualified", x = Inf, y = Inf)
+ggplot(dcproperty, aes(BEDRM, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Bedrooms Steep Increase & Decrease on Price", 
+       subtitle = "Having Fewer Kitchens Increases the Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Bedrooms",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") + 
+  scale_colour_brewer(palette = "Paired") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+text_df <- tibble(text = "Highest Price is when \n the Number of Stories \n is between 2 to 3", x = Inf, y = Inf)
+ggplot(dcproperty, aes(STORIES, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Stories Steep Increase & Dramatic Decrease on Price", 
+       subtitle = "Having between 1 and 5 Stories = Higher Price",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Stories",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") + 
+  scale_colour_brewer(palette = "Paired") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+text_df <- tibble(text = "It seems that The number of Fireplaces \n has little effect to change in price", x = Inf, y = Inf)
+ggplot(dcproperty, aes(FIREPLACES, PRICE)) + 
+  geom_point(aes(color = factor(QUALIFIED_2, labels = c("Not Qualifed", "Qualified")))) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Fire Places and Price", 
+       subtitle = "Qualification Rate is unchanging in with the increase in Fire Places",
+       caption = "Data from Kaggle.com",
+       y = "Price ($)",
+       x = "Number of Fireplaces",
+       color = "Qualification") + 
+  geom_text(aes(x, y, label = text), data = text_df, vjust = "top", hjust = "right") + 
+  scale_colour_brewer(palette = "Reds") + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+```
+
+### Diagnostic Graphs
+
+Matrix calculations do not work so have to use what we have below
+
+```{r}
+final_model <- glm(as.factor(QUALIFIED_2) ~ PRICE + I(PRICE^0.5) + as.factor(AC) + ROOMS + I(ROOMS^.2) + I(BEDRM^0.5) + as.factor(CNDTN) + as.factor(WARD) + PRICE*as.factor(AC) + PRICE*ROOMS + PRICE*as.factor(WARD), family = binomial(link = logit), data = Final_T)
+summary(final_model)
+
+a <- c(1:10, 34317:34327)
+final_modelT.diag <- glm.diag(final_model)
+final_modelT.diag$rd[a]  # Standardized Deviance Residuals
+final_modelT.diag$rp[a]  # Standardized Person Residual
+final_modelT.diag$cook[a]  # Cook's D
+final_modelT.diag$h[a]  # Leverages
+
+glm.diag.plots(final_model)
+```
+
+## ROC Curve
+
+```{r}
+roc.analysis <-function (object, newdata = NULL, newplot=TRUE) 
+{
+  if (is.null(newdata)) {
+    pi.tp <- object$fitted[object$y == 1]
+    pi.tn <- object$fitted[object$y == 0]
+  }
+  else {
+    pi.tp <- predict(object, newdata, type = "response")[newdata$y == 1]
+    pi.tn <- predict(object, newdata, type = "response")[newdata$y == 0]
+  }
+
+  pi.all <- sort(c(pi.tp, pi.tn))
+  sens <- rep(1, length(pi.all)+1)
+  specc <- rep(1, length(pi.all)+1)
+  for (i in 1:length(pi.all)) {
+    sens[i+1] <- mean(pi.tp >= pi.all[i], na.rm = T)
+    specc[i+1] <- mean(pi.tn >= pi.all[i], na.rm = T)
+  } 
+  
+  npoints <- length(sens)
+  area <- sum(0.5 * (sens[-1] + sens[-npoints]) * (specc[-npoints] - 
+        specc[-1]))
+  lift <- (sens - specc)[-1]
+  cutoff <- pi.all[lift == max(lift)][1]
+  sensopt <- sens[-1][lift == max(lift)][1]
+  specopt <- 1 - specc[-1][lift == max(lift)][1]
+
+  if (newplot){
+  plot(specc, sens, xlim = c(0, 1), ylim = c(0, 1), type = "s", 
+            xlab = "1-specificity", ylab = "sensitivity", main="ROC")
+  abline(0, 1)
+  }
+  else lines(specc, sens, type="s", lty=2, col=2)
+
+  list(pihat=as.vector(pi.all), sens=as.vector(sens[-1]), 
+  spec=as.vector(1-specc[-1]), area = area, cutoff = cutoff,
+  sensopt = sensopt, specopt = specopt)
+}
+
+trainingROC <- roc.analysis(final_model)
+trainingROC$area
+trainingROC$cutoff
+trainingROC$sensopt
+trainingROC$specopt
+
+Final_V$y <-Final_V$QUALIFIED_2
+validationROC <- roc.analysis(final_model, newdata=Final_V, newplot=F)
+validationROC$area
+validationROC$cutoff
+validationROC$sensopt
+validationROC$specopt
+```
+
