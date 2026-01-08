@@ -1,29 +1,35 @@
-# Bayesian Analysis Using R JAGS
+# Bayesian Modeling of DC Housing Prices using R jags
 
 ## Overview
-This project presents a Bayesian statistical analysis conducted using **R JAGS**.  
-The analysis focuses on modeling real-world data using Bayesian inference, emphasizing posterior estimation, convergence diagnostics, and interpretation of results.
+This project applies Bayesian modeling techniques to identify which variables best explain **residential property prices** in Washington, DC. The analysis extends beyond classical regression approaches to incorporate uncertainty through Bayesian inference.
 
-The full project report is provided as a PDF and documents the methodology, modeling decisions, and findings in detail.
+## Objectives
+- Identify key predictors of housing prices in DC
+- Compare Bayesian models to traditional regression approaches
+- Evaluate model performance using DIC and posterior diagnostics
 
-## Document
-- **R JAGS Project Report (PDF)**
-- `R Jags Project Report.pdf`
+## Data
+- Source: Kaggle DC Residential Property dataset
+- Original dataset: ~159,000 observations
+- Final dataset: ~57,000 observations
+- Training/testing split: 50/50
 
 ## Methodology
-- Bayesian modeling using **JAGS (Just Another Gibbs Sampler)**
-- Markov Chain Monte Carlo (MCMC) simulation
-- Prior and posterior distribution analysis
-- Model convergence diagnostics (trace plots, posterior summaries)
+- Bayesian hierarchical regression
+- MCMC sampling
+- Posterior distribution analysis
+- Model comparison using Deviance Information Criterion (DIC)
 
-## Tools & Technologies
+## Key Findings
+- Bathrooms, fireplaces, property age, and condition were strong predictors
+- Some predictors showed wide credible intervals crossing zero
+- Model provided meaningful insight but required further refinement
+
+## Tools
 - R
 - rjags
 - coda
-- Bayesian inference methods
-
-## Purpose
-This project was completed as part of an academic Bayesian statistics course to demonstrate practical implementation of Bayesian modeling using JAGS in R.
+- Bayesian inference
 
 ## Author
 **Aaron Niecestro**
