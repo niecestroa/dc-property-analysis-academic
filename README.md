@@ -1,9 +1,5 @@
 # DC Property Statistical Analysis Portfolio
 
-This repository contains multiple statistical analyses conducted on the same dataset.
-
-# DC Property Statistical Analysis Portfolio
-
 ## Overview
 This repository contains **five comprehensive statistical and Bayesian analysis projects** focused on residential property data in Washington, DC. Together, these projects demonstrate classical statistics, Bayesian inference, and modern machine learning techniques.
 
