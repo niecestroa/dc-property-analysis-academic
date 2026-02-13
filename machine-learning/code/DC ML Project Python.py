@@ -2,9 +2,12 @@
 """
 Created on February 13, 2026
 Editted on February 13, 2026
+
 Note: Worked on through multiple file and complied together into this one file on last edit date.
 
-This is a conversion of previous R code in to python working code
+This is a conversion of previous R code in to python working code.
+
+This file is for my machine learning work of DC Property Data from Kaggle to practice converting work from R to python.
 """
 
 # ============================================================
@@ -1869,3 +1872,4 @@ df_final.to_csv(
     r"C:\Users\aniec\Mirror\Programming Projects\2019.01_2024.05 DC Property Composite Analysis\model_comparison_results.csv",
     index=False
 )
+
