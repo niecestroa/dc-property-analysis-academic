@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on February 13, 2026
-Editted on February 23, 2026
+Editted on February 13, 2026
+Note: Worked on through multiple file and complied together into this one file on last edit date.
 
 This is a conversion of previous R code in to python working code
 """
@@ -29,43 +30,70 @@ sns.set_theme(style="whitegrid") # Consistent aesthetic for all plots
 # -----------------------------
 import statsmodels.api as sm                     # Core statsmodels API (GLM, OLS, diagnostics)
 import statsmodels.formula.api as smf            # R-style formula interface (y ~ x1 + x2)
+
 from statsmodels.stats.outliers_influence import (
-    variance_inflation_factor
-)                                                # VIF for multicollinearity diagnostics
+    variance_inflation_factor                    # VIF for multicollinearity diagnostics
+)
+
+from statsmodels.stats.anova import anova_lm     # ANOVA for nested model comparison (partial F-tests)
+
 import statsmodels.genmod.generalized_linear_model as glm
 glm.SET_USE_BIC_LLF(True)                        # Use LLF-based BIC (future-proof, suppresses warnings)
 
 # -----------------------------
 # Machine Learning Models (sklearn)
 # -----------------------------
-from sklearn.metrics import roc_curve, auc       # ROC curve + AUC (R's pROC equivalent)
-from sklearn.preprocessing import StandardScaler # Feature scaling for ML models
+from sklearn.metrics import (
+    roc_curve, auc,                               # ROC curve + AUC (R's pROC equivalent)
+    mean_squared_error,                           # Regression MSE (Ridge, LASSO, PCR, PLS, Trees, RF, Bagging)
+    accuracy_score,                               # Classification accuracy (KNN, LDA, QDA, SVM, Trees, RF)
+    confusion_matrix                              # Classification confusion matrix
+)
+
+from sklearn.preprocessing import (
+    StandardScaler,                               # Feature scaling for ML models
+    PolynomialFeatures                            # Polynomial basis expansion (R's poly(x, degree))
+)
+
 from sklearn.model_selection import (
     train_test_split, GridSearchCV, cross_val_score
-)                                                # Splitting, tuning, cross-validation
+)                                                 # Splitting, tuning, cross-validation
+
 from sklearn.neighbors import KNeighborsClassifier # KNN classification
+
 from sklearn.discriminant_analysis import (
     LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
-)                                                # LDA & QDA
-from sklearn.svm import SVC                      # Support Vector Machines (linear, poly, radial, sigmoid)
+)                                                 # LDA & QDA
+
+from sklearn.svm import SVC                       # Support Vector Machines (linear, poly, radial, sigmoid)
+
 from sklearn.linear_model import (
     LinearRegression, RidgeCV, LassoCV
-)                                                # Linear, Ridge, LASSO regression
-from sklearn.decomposition import PCA            # Principal Component Analysis (PCR foundation)
-from sklearn.cross_decomposition import PLSRegression # Partial Least Squares Regression
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier # Regression & classification trees
+)                                                 # Linear, Ridge, LASSO regression
+
+from sklearn.decomposition import PCA             # Principal Component Analysis (PCR foundation)
+from sklearn.cross_decomposition import PLSRegression  # Partial Least Squares Regression
+
+from sklearn.tree import (
+    DecisionTreeRegressor, DecisionTreeClassifier,
+    plot_tree                                     # Tree visualization (R's plot(tree))
+)
+
 from sklearn.ensemble import (
     RandomForestRegressor, RandomForestClassifier,
-    BaggingRegressor
+    BaggingRegressor                              # Bagging for regression trees
 )
-from sklearn.ensemble import BaggingClassifier  # Bagging for classification trees (R's bagging() for categorical outcomes)    
+
+from sklearn.ensemble import BaggingClassifier    # Bagging for classification trees (R's bagging())
+
+from sklearn.pipeline import Pipeline             # Pipeline for polynomial regression, scaling + model chaining
 
 # -----------------------------
 # Utility Libraries
 # -----------------------------
-import itertools                                 # Combinatorics (used for regsubsets-style feature selection)
-import warnings                                  # Suppress noisy warnings when needed
-warnings.filterwarnings("ignore")                # Cleaner output (optional)
+import itertools                                  # Combinatorics (used for regsubsets-style feature selection)
+import warnings                                   # Suppress noisy warnings when needed
+warnings.filterwarnings("ignore")                 # Cleaner output (optional)
 
 # ============================================================
 # MODULE 1 — DATA LOADING & CLEANING (MODERN PYTHON VERSION)
@@ -499,9 +527,6 @@ def plot_subset_metric(results_df, metric="BIC"):
 # ============================================================
 # MODULE 5 — PARTIAL F-TESTS (ANOVA) FOR NESTED MODELS
 # ============================================================
-
-import statsmodels.formula.api as smf
-from statsmodels.stats.anova import anova_lm
 
 def partial_f_test(data, full_formula, reduced_formula):
     """
@@ -1637,3 +1662,210 @@ plot_geospatial(DC_train, hue="WARD")
 # Regression Diagnostics (example using your final model)
 # final_model = smf.ols("PRICE_10K ~ BATHRM + ROOMS + ...", data=DC_train).fit()
 # regression_diagnostics(final_model)
+
+# ============================================================
+# MODULE 14 — FINAL MODEL COMPARISON TABLE (SORT + HIGHLIGHT)
+# ============================================================
+
+# ------------------------------------------------------------
+# Helper: Safe MSE (for classification models)
+# ------------------------------------------------------------
+def safe_mse(y_true, y_pred):
+    try:
+        return mean_squared_error(y_true, y_pred)
+    except:
+        return np.nan
+
+# ------------------------------------------------------------
+# Helper: Safe Accuracy (for regression models)
+# ------------------------------------------------------------
+def safe_accuracy(y_true, y_pred):
+    try:
+        return accuracy_score(y_true, y_pred)
+    except:
+        return np.nan
+
+# ------------------------------------------------------------
+# Build comparison row
+# ------------------------------------------------------------
+def model_row(name, y_test, y_pred, notes=""):
+    return {
+        "Model": name,
+        "Test MSE": safe_mse(y_test, y_pred),
+        "Accuracy": safe_accuracy(y_test, y_pred),
+        "Notes": notes
+    }
+
+# ------------------------------------------------------------
+# Build comparison table (raw DataFrame)
+# ------------------------------------------------------------
+def build_model_comparison(models_dict, y_test):
+    rows = []
+    for name, (preds, notes) in models_dict.items():
+        rows.append(model_row(name, y_test, preds, notes))
+    df = pd.DataFrame(rows)
+
+    df_sorted = df.sort_values(
+        by=["Test MSE", "Accuracy"],
+        ascending=[True, False],
+        na_position="last"
+    ).reset_index(drop=True)
+
+    return df_sorted
+
+# ------------------------------------------------------------
+# Highlight best models (lowest MSE, highest Accuracy)
+# ------------------------------------------------------------
+def highlight_best_models(df):
+    styled = df.style
+
+    if df["Test MSE"].notna().any():
+        min_mse = df["Test MSE"].min()
+        styled = styled.apply(
+            lambda row: ["background-color: #d4f4dd" if row["Test MSE"] == min_mse else "" for _ in row],
+            axis=1
+        )
+
+    if df["Accuracy"].notna().any():
+        max_acc = df["Accuracy"].max()
+        styled = styled.apply(
+            lambda row: ["background-color: #d0e7ff" if row["Accuracy"] == max_acc else "" for _ in row],
+            axis=1
+        )
+
+    return styled
+
+# ------------------------------------------------------------
+# Master function: Build + Sort + Highlight
+# ------------------------------------------------------------
+def final_model_table(models_dict, y_test):
+    df_sorted = build_model_comparison(models_dict, y_test)
+    styled = highlight_best_models(df_sorted)
+    return df_sorted, styled
+
+# ============================================================
+# MODULE 15 — END‑TO‑END PIPELINE SCRIPT
+# ============================================================
+
+# -----------------------------
+# 1. Load Data
+# -----------------------------
+DC = pd.read_csv("DC_housing_clean.csv")
+
+# -----------------------------
+# 2. Feature Engineering
+# -----------------------------
+predictors = [
+    "BATHRM", "ROOMS", "BEDRM", "STORIES",
+    "KITCHENS", "FIREPLACES",
+    "LATITUDE", "LONGITUDE",
+    "AYB_age", "EYB_age", "REMODEL_age"
+]
+
+response = "PRICE_10K"
+
+X = DC[predictors].values
+y = DC[response].values
+
+# Classification labels
+y_class = np.where(DC[response] > DC[response].median(), "Over", "Under")
+
+# -----------------------------
+# 3. Train/Test Split
+# -----------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=123
+)
+
+y_train_clf, y_test_clf = train_test_split(
+    y_class, test_size=0.25, random_state=123
+)
+
+# -----------------------------
+# 4. Fit Models
+# -----------------------------
+
+# OLS
+ols_model = sm.OLS(y_train, sm.add_constant(X_train)).fit()
+ols_preds = ols_model.predict(sm.add_constant(X_test))
+
+# Ridge
+ridge_model = RidgeCV(alphas=np.logspace(-3, 3, 50)).fit(X_train, y_train)
+ridge_preds = ridge_model.predict(X_test)
+
+# LASSO
+lasso_model = LassoCV(cv=5).fit(X_train, y_train)
+lasso_preds = lasso_model.predict(X_test)
+
+# PCR
+pca = PCA(n_components=5)
+X_train_pca = pca.fit_transform(X_train)
+X_test_pca = pca.transform(X_test)
+pcr_model = LinearRegression().fit(X_train_pca, y_train)
+pcr_preds = pcr_model.predict(X_test_pca)
+
+# PLS
+pls_model = PLSRegression(n_components=5).fit(X_train, y_train)
+pls_preds = pls_model.predict(X_test).flatten()
+
+# KNN
+knn_model = Pipeline([
+    ("scale", StandardScaler()),
+    ("knn", KNeighborsClassifier(n_neighbors=7))
+])
+knn_model.fit(X_train, y_train_clf)
+knn_preds = knn_model.predict(X_test)
+
+# LDA
+lda_model = LinearDiscriminantAnalysis().fit(X_train, y_train_clf)
+lda_preds = lda_model.predict(X_test)
+
+# QDA
+qda_model = QuadraticDiscriminantAnalysis().fit(X_train, y_train_clf)
+qda_preds = qda_model.predict(X_test)
+
+# SVM
+svm_model = SVC(kernel="rbf", C=1).fit(X_train, y_train_clf)
+svm_preds = svm_model.predict(X_test)
+
+# Regression Tree
+tree_model = DecisionTreeRegressor(max_depth=6).fit(X_train, y_train)
+tree_preds = tree_model.predict(X_test)
+
+# Random Forest
+rf_model = RandomForestRegressor(n_estimators=500, max_features=4).fit(X_train, y_train)
+rf_preds = rf_model.predict(X_test)
+
+# Bagging
+bag_model = BaggingRegressor(n_estimators=500).fit(X_train, y_train)
+bag_preds = bag_model.predict(X_test)
+
+# -----------------------------
+# 5. Build Comparison Table
+# -----------------------------
+models_dict = {
+    "OLS": (ols_preds, "Final GLM"),
+    "Ridge": (ridge_preds, f"alpha={ridge_model.alpha_}"),
+    "LASSO": (lasso_preds, f"alpha={lasso_model.alpha_}"),
+    "PCR": (pcr_preds, "5 components"),
+    "PLS": (pls_preds, "5 components"),
+    "KNN": (knn_preds, "k=7"),
+    "LDA": (lda_preds, ""),
+    "QDA": (qda_preds, ""),
+    "SVM": (svm_preds, "RBF kernel"),
+    "Regression Tree": (tree_preds, "depth=6"),
+    "Random Forest": (rf_preds, "mtry=4"),
+    "Bagging": (bag_preds, "500 trees")
+}
+
+df_final, styled_final = final_model_table(models_dict, y_test)
+
+print(df_final)
+
+# -----------------------------
+# 6. Save Output
+# -----------------------------
+df_final.to_csv(
+    r"C:\Users\aniec\Mirror\Programming Projects\2019.01_2024.05 DC Property Composite Analysis\model_comparison_results.csv",
+    index=False
+)
