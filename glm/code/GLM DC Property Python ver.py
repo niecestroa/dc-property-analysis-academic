@@ -1,28 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Feb 12 23:55:22 2026
+Created on Thursday Feb 12, 2026
+Editted on Thu Feb 13, 2026
 
 @author: aniec
 """
 
 # ============================================================
 # DC HOUSING ANALYSIS — FULL PYTHON SCRIPT
-# Converted from R (STAT-616 GLM Project)
+# Converted from R to Python to help develop Python coding skills
 # ============================================================
 
 # ============================================================
 # SECTION 0 — IMPORTS & SETUP
 # ============================================================
 
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-from sklearn.metrics import roc_curve, auc
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-import itertools
+import pandas as pd              # Data loading and manipulation
+import numpy as np               # Numerical operations
+import seaborn as sns            # Statistical visualization
+import matplotlib.pyplot as plt  # Plotting library
+import statsmodels.api as sm     # Core statsmodels API
+import statsmodels.formula.api as smf  # R-style formula interface
+from sklearn.metrics import roc_curve, auc  # ROC and AUC metrics
+from statsmodels.stats.outliers_influence import variance_inflation_factor  # VIF diagnostics
+import itertools                 # Efficient combinatorics utilities
+
+# Enable LLF-based BIC to avoid FutureWarning and use the standard definition
+import statsmodels.genmod.generalized_linear_model as glm   # Access GLM internals
+glm.SET_USE_BIC_LLF(True)                                   # Use log-likelihood-based BIC (bic_llf)
 
 sns.set_theme(style="whitegrid")
 
@@ -30,9 +35,8 @@ sns.set_theme(style="whitegrid")
 # SECTION 1 — LOAD & CLEAN DATA
 # ============================================================
 
-# Load Excel dataset
 DC_Properties = pd.read_excel(
-    "~/Documents/STAT 616 Generalizd Linear Models/GLM Project/Data/DC_Properties.xlsx"
+    r"C:\Users\aniec\Mirror\Programming Projects\2019.01_2024.05 DC Property Composite Analysis\2019.05.20 R - DC Property using GLM\Data\DC_Properties.xlsx"
 )
 
 # -----------------------------
@@ -56,18 +60,14 @@ DC_Properties_Visualisations = (
     .query("HF_BATHRM > 0")
 )
 
-# Create binary qualification variable
 DC_Properties_Visualisations["QUALIFIED_2"] = (
     DC_Properties_Visualisations["QUALIFIED"].apply(lambda x: 1 if x == "Q" else 0)
 )
 
-# Drop missing values
 dcproperty = DC_Properties_Visualisations.dropna().copy()
 
-# Recode AC
-dcproperty["AC"] = dcproperty["AC"].replace({"0": "N"})
+dcproperty["AC"] = dcproperty["AC"].replace({0: "N", "0": "N"})
 
-# Collapse Exceptional grades
 dcproperty["GRADE"] = dcproperty["GRADE"].replace({
     "Exceptional-A": "Exceptional",
     "Exceptional-B": "Exceptional",
@@ -77,7 +77,6 @@ dcproperty["GRADE"] = dcproperty["GRADE"].replace({
 
 # -----------------------------
 # CLEANING FOR FINAL MODEL DATASET
-# (SALEDATE is KEPT per user request)
 # -----------------------------
 
 DC_Properties_Final = (
@@ -106,20 +105,24 @@ DC_Properties_Final["QUALIFIED_2"] = (
 )
 
 DC_Final = DC_Properties_Final.dropna().copy()
-DC_Final["AC"] = DC_Final["AC"].replace({"0": "N"})
+DC_Final["AC"] = DC_Final["AC"].replace({0: "N", "0": "N"})
+
 
 # ============================================================
 # SECTION 2 — TRAINING / VALIDATION SPLIT
 # ============================================================
 
-cases = list(range(1, 2774)) \
-        + list(range(4624, 6650)) \
-        + list(range(8000, 12725)) \
-        + list(range(15874, 22080)) \
-        + list(range(26216, 31904))
+cases = (
+    list(range(1, 2774)) +
+    list(range(4624, 6650)) +
+    list(range(8000, 12725)) +
+    list(range(15874, 22080)) +
+    list(range(26216, 31904))
+)
 
 Final_T = DC_Final.iloc[cases, :]
 Final_V = DC_Final.drop(DC_Final.index[cases])
+
 
 # ============================================================
 # SECTION 3 — MODELING
@@ -137,6 +140,7 @@ basic_model = smf.glm(
 print("\n===== BASIC MODEL =====")
 print(basic_model.summary())
 
+
 # -----------------------------
 # FULL MODEL (NO INTERACTIONS)
 # -----------------------------
@@ -152,25 +156,37 @@ model3 = smf.glm(
 print("\n===== FULL MODEL =====")
 print(model3.summary())
 
-# -----------------------------
-# STEPWISE AIC
-# -----------------------------
+
+# ============================================================
+# STEPWISE AIC (ALL-SUBSETS)
+# ============================================================
+
 def stepwise_aic(data, response, predictors):
     best_aic = np.inf
     best_model = None
     best_formula = None
-    
+
     for k in range(1, len(predictors)+1):
         for subset in itertools.combinations(predictors, k):
             formula = response + " ~ " + " + ".join(subset)
-            model = smf.glm(formula=formula, data=data,
-                            family=sm.families.Binomial()).fit()
-            if model.aic < best_aic:
-                best_aic = model.aic
-                best_model = model
-                best_formula = formula
-    
+
+            try:
+                model = smf.glm(
+                    formula=formula,
+                    data=data,
+                    family=sm.families.Binomial()
+                ).fit()
+
+                if model.aic < best_aic:
+                    best_aic = model.aic
+                    best_model = model
+                    best_formula = formula
+
+            except Exception:
+                continue
+
     return best_model, best_formula
+
 
 predictors = [
     "PRICE", "BATHRM", "C(AC)", "ROOMS", "BEDRM",
@@ -183,28 +199,39 @@ print("\n===== AIC MODEL =====")
 print("Selected formula:", formula_aic)
 print(model_aic.summary())
 
-# -----------------------------
-# STEPWISE BIC
-# -----------------------------
+
+# ============================================================
+# STEPWISE BIC (ALL-SUBSETS, LLF-BASED)
+# ============================================================
+
 def stepwise_bic(data, response, predictors):
     best_bic = np.inf
     best_model = None
     best_formula = None
-    n = data.shape[0]
-    
+
     for k in range(1, len(predictors)+1):
         for subset in itertools.combinations(predictors, k):
             formula = response + " ~ " + " + ".join(subset)
-            model = smf.glm(formula=formula, data=data,
-                            family=sm.ffamilies.Binomial()).fit()
-            bic = model.aic + (np.log(n) - 2) * model.df_model
-            
-            if bic < best_bic:
-                best_bic = bic
-                best_model = model
-                best_formula = formula
-    
+
+            try:
+                model = smf.glm(
+                    formula=formula,
+                    data=data,
+                    family=sm.families.Binomial()
+                ).fit()
+
+                bic = model.bic_llf  # LLF-based BIC (correct + future-proof)
+
+                if bic < best_bic:
+                    best_bic = bic
+                    best_model = model
+                    best_formula = formula
+
+            except Exception:
+                continue
+
     return best_model, best_formula
+
 
 model_bic, formula_bic = stepwise_bic(Final_T, "QUALIFIED_2", predictors)
 
@@ -348,15 +375,15 @@ plt.show()
 # -----------------------------
 # MAP PLOTS
 # -----------------------------
-sns.scatterplot(data=dcproperty, x="X", y="Y", hue="ZIPCODE", s=30)
+sns.scatterplot(data=dcproperty, x="LONGITUDE", y="LATITUDE", hue="ZIPCODE")
 plt.title("Map of Data by Zipcode")
 plt.show()
 
-sns.scatterplot(data=dcproperty, x="X", y="Y", hue="WARD", s=30)
+sns.scatterplot(data=dcproperty, x="LONGITUDE", y="LATITUDE", hue="WARD", s=30)
 plt.title("Map of Data by Ward")
 plt.show()
 
-sns.scatterplot(data=dcproperty, x="X", y="Y", hue="QUADRANT", s=30)
+sns.scatterplot(data=dcproperty, x="LONGITUDE", y="LATITUDE", hue="QUADRANT", s=30)
 plt.title("Map of Data by Quadrant")
 plt.show()
 
@@ -458,8 +485,30 @@ plt.show()
 # ============================================================
 
 """
-Your full conclusion text preserved here as comments.
-(omitted for brevity in this script)
+To conclude we have created a binary logistic model for what determines whether a property is qualified enough to sell. Although the AIC is very high as 16,748, it seems that the model fits that data well. It was a long analysis process but we could complete it even with the time restrictions we had. Now we will answer the 7 questions we had at the beginning of this study. The answers to our seven questions were as follows: 1) We were not able to hear back from Chris, the provider of this dataset on Kaggle, we so can still not answer what the qualification column in the original dataset means. 2) The qualifications for a residential property to be sold on the market is that the paperwork is completed and submitted, the bank approves any transaction that the buyers and sellers need and the inspection of the property is passed. 3) From all our analysis so far, we can conclude that property pricing is the most important factor in determining whether a property is qualified to go on the market 4) From all our analysis so far, we can conclude realtors do care whether the property is qualified to sell and money is the most important to them. Since the more the realtor sells and the higher the price, the property is sold for the more money from the deal they receive. 4) We believe that we were creating the most optimal regression for modeling properties based on our response variable being qualification. Overall though a multiple linear type regression would work best when it comes to making housing, property, and apartment models. 5) We did follow the previous housing model approaches for predictor variables at the beginning of our model building but our analysis later had different predictor variables from those models creating using linear regression. 6) Yes, money is the most important thing. We will not say how this defines this world since we do not wish to be labeled as pessimistic people. Thankfully, we could answer our questions based on our analysis results and work, yet this does not mean we will stop the analysis being conducted. \
+For future analysis, we would do many things differently and add many different types of things.  We will do the following things in the future: 1) conduct more time analysis and visualizations, 2) conduct some sentiment analysis on the street, neighborhood, and State one lives in since people are sometimes superstitious, 3) Try to see if we can hear back on what qualification meant in the dataset, 4) Add a few more variables – for example: Heat, and the interaction terms of heat and AC, 5) Collect data from realtor’s websites and fill in the information ourselves since we were losing data constantly, 6) Add neighborhood rating, neighborhood review 7) Collect data from the surrounding states (West Virginia, Virginia, Maryland). \
+In conclusion, through all our analysis and graphs our model might have been able to measure the odds for determining qualifications. This model is nowhere near good enough to be published or presented in a conference. This was a great learning experience for careers even though the model we created is still inferior to a linear regression pricing model since we believe that money is the most important to realtors and people when it comes to the housing market. If you wish to know more about the data and analysis we have completed visit reference link 1. As a famous person once said, “failure is the mother of success.”
+"""
+
+"""
+I worked with Kingsley Iyawe in STAT-616 Generalized Linear Models to complete this project and report. He deserves some credit for this report.
+"""
+
+# ============================================================
+# SECTION 9 — REFERENCES
+# ============================================================
+
+"""
+1. https://aaronniecestro.shinyapps.io/DC-Housing/ 
+2. McKay, Allie W. “Farmers' Markets vs. Food Deserts: Which Are Winning in DC?” The Capital's Markets, 31 July 2014, thecapitalsmarkets.wordpress.com/2014/07/31/farmers-markets-vs-food-deserts-which-is-winning-in-dc/.
+3. Johnson, Matt. “Washington's Systemic Streets.” Greater Greater Washington, ggwash.org/view/2530/washingtons-systemic-streets.
+4. “Money Is The Root Of All Evil Stock Photos and Images.” Alamy, www.alamy.com/stock-photo/money-is-the-root-of-all-evil.html.
+5. “Types of Housing Models and Programs.” The 519, www.the519.org/education-training/lgbtq2s-youth-homelessness-in-canada/types-of-housing-models-and-programs.
+6. Dobbins, Tim, and John Burke. “Predicting Housing Prices with Linear Regression Using Python, Pandas, and Statsmodels.” Learn Data Science - Tutorials, Books, Courses, and More, www.learndatasci.com/tutorials/predicting-housing-prices-linear-regression-using-python-pandas-statsmodels/.
+7. Corsini, Kenneth Richard. “STATISTICAL ANALYSIS OF RESIDENTIAL HOUSING PRICES IN AN UP AND DOWN REAL ESTATE MARKET: A GENERAL FRAMEWORK AND STUDY OF COBB COUNTY, GA .” A Thesis Presented to The Academic Faculty, Georgia Institute of Technology, Dec. 2009, smartech.gatech.edu/bitstream/handle/1853/31763/Corsini_Kenneth_R_200912_mast.pdf.
+8. "Regression Data for Inclusionary Housing Simulation Model | DataSF | City, and County of San Francisco." San Francisco Data, data.sfgov.org/Economy-and-Community/Regression-data-for-Inclusionary-Housing-Simulatio/vcwn-f2xk/data.
+9. Leonard, Kimberlee. “What Forms Are Needed to Sell a Home by Owner?” Home Guides | SF Gate, 29 Dec. 2018, homeguides.sfgate.com/forms-needed-sell-home-owner-7271.html.
+10. Leonard, Kimberlee. “What Is the Procedure for Closing a for Sale by Owner House Sale?” Home Guides | SF Gate, 15 Dec. 2018, homeguides.sfgate.com/procedure-closing-sale-owner-house-sale-65511.html.
 """
 
 # ============================================================
