@@ -33,3 +33,9 @@ This repository contains **five comprehensive statistical and Bayesian analysis 
 - Bayesian hierarchical modeling
 - Posterior inference and uncertainty analysis
 - [Bayesian - R Stan](https://github.com/niecestroa/DC-Property-Statistical-Analysis/tree/main/bayesian/r-stan)
+
+## Academic Disclaimer
+This repository and all included analyses were created solely for academic and educational purposes.
+For professional biostatistics, data science, or clinical research work, please refer to my industry portfolio and recent projects.
+View professional repository: [Professional](https://github.com/niecestroa/dc-property-analysis-pro)
+
